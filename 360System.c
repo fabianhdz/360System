@@ -11,7 +11,7 @@
 #include "sounds.h"
 #include "ultrasonic.h"
 
-#define NUM_SENSORS 2u
+#define NUM_SENSORS 5u
 #define STATUS_LED_PIN 25u
 #define DISTANCE_FILTER_SAMPLES 3u
 #define MIN_VALID_DISTANCE_CM 2.0f
@@ -51,8 +51,16 @@ typedef struct {
 } application_sensor_t;
 
 static const ultrasonic_sensor_config_t ultrasonic_sensors[NUM_SENSORS] = {
+    // Sensor 1
     {.trigger_pin = 0, .echo_pin = 1},
-    {.trigger_pin = 3, .echo_pin = 4}
+    // Sensor 2
+    {.trigger_pin = 3, .echo_pin = 4},
+    // Sensor 3
+    {.trigger_pin = 6, .echo_pin = 7},
+    // Sensor 4
+    {.trigger_pin = 18, .echo_pin = 17},
+    // Sensor 5
+    {.trigger_pin = 20, .echo_pin = 21}
 };
 
 static const ultrasonic_timing_config_t ultrasonic_timing = {
@@ -76,8 +84,12 @@ static const audio_clip_t audio_clips[AUDIO_MESSAGE_COUNT - 1] = {
 };
 
 static application_sensor_t application_sensors[NUM_SENSORS] = {
+    // Motors 1-5: GP2, GP5, GP8, GP16, GP19
     {.motor_pin = 2},
-    {.motor_pin = 5}
+    {.motor_pin = 5},
+    {.motor_pin = 8},
+    {.motor_pin = 16},
+    {.motor_pin = 19}
 };
 
 static void audio_core1_task(void)
