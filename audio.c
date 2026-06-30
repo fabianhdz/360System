@@ -1,5 +1,6 @@
 #include "audio.h"
 
+#include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
 #include "hardware/sync.h"
