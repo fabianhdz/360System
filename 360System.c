@@ -19,6 +19,7 @@
 #define MOTOR_MAX_DISTANCE_CM 308.8f
 #define MOTOR_APPROACH_ON_CM 10.0f
 #define MOTOR_APPROACH_OFF_CM 3.0f
+#define CM_PER_FOOT 30.48f
 
 typedef enum {
     AUDIO_ONE_FOOT = 1,
@@ -171,12 +172,16 @@ static void queue_audio(audio_message_t message)
 
 static void signal_audio(float new_distance)
 {
-    if (new_distance >= 30.48f && new_distance < 60.96f) {
-        queue_audio(AUDIO_ONE_FOOT);
-    } else if (new_distance >= 60.96f && new_distance < 91.44f) {
-        queue_audio(AUDIO_TWO_FEET);
-    } else if (new_distance >= 91.44f && new_distance < 121.92f) {
-        queue_audio(AUDIO_THREE_FEET);
+    uint32_t whole_feet;
+
+    if (new_distance < CM_PER_FOOT) {
+        return;
+    }
+
+    whole_feet = (uint32_t)(new_distance / CM_PER_FOOT);
+    if (whole_feet >= (uint32_t)AUDIO_ONE_FOOT &&
+        whole_feet <= (uint32_t)AUDIO_TEN_FEET) {
+        queue_audio((audio_message_t)whole_feet);
     }
 }
 
