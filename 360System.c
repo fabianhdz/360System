@@ -1,13 +1,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #include "hardware/gpio.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 
 #include "audio.h"
+#include "log.h"
 #include "sounds.h"
 #include "ultrasonic.h"
 
@@ -203,7 +203,7 @@ static void handle_ultrasonic_event(const ultrasonic_event_t *event)
         sensor->sample_count = 0;
         sensor->next_sample = 0;
         gpio_put(sensor->motor_pin, 0);
-        printf(
+        LOG(
             "Sensor %u: echo timeout\n",
             (unsigned int)event->sensor_index
         );
@@ -211,7 +211,7 @@ static void handle_ultrasonic_event(const ultrasonic_event_t *event)
     }
 
     if (!distance_is_valid(event->distance_cm)) {
-        printf(
+        LOG(
             "Sensor %u: invalid distance %.2f cm\n",
             (unsigned int)event->sensor_index,
             event->distance_cm
@@ -223,18 +223,18 @@ static void handle_ultrasonic_event(const ultrasonic_event_t *event)
     previous_distance = sensor->filtered_distance_cm;
     sensor->filter_ready = filter_distance(sensor, event->distance_cm);
 
-    printf(
+    LOG(
         "Sensor %u: raw = %.2f cm",
         (unsigned int)event->sensor_index,
         event->distance_cm
     );
 
     if (!sensor->filter_ready) {
-        printf(" (filter warming up)\n");
+        LOG(" (filter warming up)\n");
         return;
     }
 
-    printf(", filtered = %.2f cm\n", sensor->filtered_distance_cm);
+    LOG(", filtered = %.2f cm\n", sensor->filtered_distance_cm);
 
     if (previously_ready) {
         signal_motor(
@@ -251,7 +251,9 @@ static void handle_ultrasonic_event(const ultrasonic_event_t *event)
 
 static bool setup_hardware(void)
 {
+#if ENABLE_DEBUG_LOGS
     stdio_init_all();
+#endif
 
     gpio_init(STATUS_LED_PIN);
     gpio_set_dir(STATUS_LED_PIN, GPIO_OUT);
@@ -275,7 +277,7 @@ int main(void)
     ultrasonic_event_t event;
 
     if (!setup_hardware()) {
-        printf("Failed to initialize ultrasonic sensors\n");
+        LOG("Failed to initialize ultrasonic sensors\n");
         return 1;
     }
 

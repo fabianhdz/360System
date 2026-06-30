@@ -5,6 +5,8 @@ cmake_minimum_required(VERSION 3.13)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+option(ENABLE_DEBUG_LOGS "Enable firmware diagnostic logging" ON)
+
 set(PICO_BOARD pico CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
@@ -26,8 +28,15 @@ add_executable(360System 360System.c audio.c sounds.c ultrasonic.c)
 pico_set_program_name(360System "360System")
 pico_set_program_version(360System "0.1")
 
-pico_enable_stdio_uart(360System 1)
-pico_enable_stdio_usb(360System 1)
+if(ENABLE_DEBUG_LOGS)
+  target_compile_definitions(360System PRIVATE ENABLE_DEBUG_LOGS=1)
+  pico_enable_stdio_uart(360System 1)
+  pico_enable_stdio_usb(360System 1)
+else()
+  target_compile_definitions(360System PRIVATE ENABLE_DEBUG_LOGS=0)
+  pico_enable_stdio_uart(360System 0)
+  pico_enable_stdio_usb(360System 0)
+endif()
 
 # Add the standard library to the build
 target_link_libraries(360System
