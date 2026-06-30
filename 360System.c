@@ -1,4 +1,6 @@
 
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
@@ -87,7 +89,7 @@ void echo_isr(uint gpio, uint32_t events) {
     //last_echo_pin = gpio;
 }
 //checks if new pulses have been receive
-bool any_pulse_received() {
+bool any_pulse_received(void) {
     for (int i = 0; i < NUM_SENSORS; i++) {
         if (pulse_received[i]) {
             return true;
@@ -109,7 +111,7 @@ void signalMotor(float previous_Distance,float newDistance, int index)
          gpio_put(motor_pins[index],0);
     }
 }
-void signalaudio(float previous_Distance,float newDistance)
+void signalaudio(float newDistance)
 {
     if(newDistance>=30.48 && newDistance < 60.96)
     {
@@ -133,7 +135,7 @@ void reset_sensor(int index)
     gpio_put(trigger_pins[index],0);
     starttime[index] = time_us_32();
 }
-void setup() {
+void setup(void) {
     stdio_init_all();
         gpio_init(25);
         gpio_set_dir(25,GPIO_OUT);
@@ -148,7 +150,7 @@ void setup() {
     }
 }
 
-void loop() {
+void loop(void) {
     // Send trigger pulses
     gpio_put(25,1);
     uint32_t timeout = 5000000;// 5 seconds
@@ -173,7 +175,7 @@ void loop() {
                 printf("Sensor %d: Distance = %.2f cm\n", i, distance[i]);
                 signalMotor(previousDistance,distance[i],i);
                 if(i == 0){
-                    signalaudio(previousDistance,distance[i]);
+                    signalaudio(distance[i]);
                  }
                 sleep_ms(500);
                  gpio_put(trigger_pins[i],0);
@@ -199,7 +201,7 @@ void loop() {
         }
     }
 }
-int main() {
+int main(void) {
     
     setup();
     multicore_launch_core1(audio_core1_task);
