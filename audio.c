@@ -12,6 +12,7 @@
 static volatile size_t data_position = 0;
 static volatile size_t data_length = 0;
 static const uint8_t *volatile audio_data = NULL;
+static uint audio_pin_slice;
 
 static void pwm_interrupt_handler(void);
 
@@ -19,11 +20,11 @@ void setup_audio(void)
 {
     gpio_set_function(AUDIO_PIN, GPIO_FUNC_PWM);
 
-    uint audio_pin_slice = pwm_gpio_to_slice_num(AUDIO_PIN);
+    audio_pin_slice = pwm_gpio_to_slice_num(AUDIO_PIN);
 
-    // Fire an interrupt after each PWM cycle to advance audio playback.
+    // Install the handler now, but leave the slice interrupt off while idle.
     pwm_clear_irq(audio_pin_slice);
-    pwm_set_irq_enabled(audio_pin_slice, true);
+    pwm_set_irq_enabled(audio_pin_slice, false);
     irq_set_exclusive_handler(PWM_IRQ_WRAP, pwm_interrupt_handler);
     irq_set_enabled(PWM_IRQ_WRAP, true);
 
@@ -40,7 +41,7 @@ static void pwm_interrupt_handler(void)
 {
     size_t position = data_position;
 
-    pwm_clear_irq(pwm_gpio_to_slice_num(AUDIO_PIN));
+    pwm_clear_irq(audio_pin_slice);
     if (position < data_length * AUDIO_SAMPLE_REPEAT) {
         // Hold each sample for eight PWM cycles to produce the speech sample rate.
         pwm_set_gpio_level(
@@ -53,12 +54,18 @@ static void pwm_interrupt_handler(void)
 
 void play_audio(const uint8_t *audio_buffer, size_t length)
 {
+    if (audio_buffer == NULL || length == 0u) {
+        return;
+    }
+
     // Prevent the PWM ISR from observing partially updated playback state.
     uint32_t interrupt_state = save_and_disable_interrupts();
 
     audio_data = audio_buffer;
     data_length = length;
     data_position = 0;
+    pwm_clear_irq(audio_pin_slice);
+    pwm_set_irq_enabled(audio_pin_slice, true);
     restore_interrupts(interrupt_state);
 
     pwm_set_gpio_level(AUDIO_PIN, 0);
@@ -66,5 +73,9 @@ void play_audio(const uint8_t *audio_buffer, size_t length)
         // Sleep until the PWM interrupt advances playback.
         __wfi();
     }
+
+    // Stop wrap interrupts until another clip starts.
+    pwm_set_irq_enabled(audio_pin_slice, false);
+    pwm_clear_irq(audio_pin_slice);
     pwm_set_gpio_level(AUDIO_PIN, 0);
 }
