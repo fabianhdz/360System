@@ -13,6 +13,12 @@
 
 #define NUM_SENSORS 2u
 #define STATUS_LED_PIN 25u
+#define DISTANCE_FILTER_SAMPLES 3u
+#define MIN_VALID_DISTANCE_CM 2.0f
+#define MAX_VALID_DISTANCE_CM 400.0f
+#define MOTOR_MAX_DISTANCE_CM 308.8f
+#define MOTOR_APPROACH_ON_CM 10.0f
+#define MOTOR_APPROACH_OFF_CM 3.0f
 
 typedef enum {
     AUDIO_ONE_FOOT = 1,
@@ -35,7 +41,12 @@ typedef struct {
 
 typedef struct {
     uint8_t motor_pin;
-    float distance_cm;
+    float distance_samples[DISTANCE_FILTER_SAMPLES];
+    size_t next_sample;
+    size_t sample_count;
+    float filtered_distance_cm;
+    bool filter_ready;
+    bool motor_on;
 } application_sensor_t;
 
 static const ultrasonic_sensor_config_t ultrasonic_sensors[NUM_SENSORS] = {
@@ -64,8 +75,8 @@ static const audio_clip_t audio_clips[AUDIO_MESSAGE_COUNT - 1] = {
 };
 
 static application_sensor_t application_sensors[NUM_SENSORS] = {
-    {.motor_pin = 2, .distance_cm = 0.0f},
-    {.motor_pin = 5, .distance_cm = 0.0f}
+    {.motor_pin = 2},
+    {.motor_pin = 5}
 };
 
 static void audio_core1_task(void)
@@ -82,15 +93,72 @@ static void audio_core1_task(void)
     }
 }
 
-static void signal_motor(float previous_distance, float new_distance, size_t sensor_index)
+static bool distance_is_valid(float distance_cm)
 {
-    bool approaching = new_distance <= previous_distance - 10.0f;
-    bool within_range = new_distance <= 308.8f;
+    return distance_cm >= MIN_VALID_DISTANCE_CM &&
+           distance_cm <= MAX_VALID_DISTANCE_CM;
+}
 
-    gpio_put(
-        application_sensors[sensor_index].motor_pin,
-        approaching && within_range
+static float median_of_three(float first, float second, float third)
+{
+    if (first > second) {
+        float temporary = first;
+        first = second;
+        second = temporary;
+    }
+    if (second > third) {
+        float temporary = second;
+        second = third;
+        third = temporary;
+    }
+    if (first > second) {
+        second = first;
+    }
+
+    return second;
+}
+
+static bool filter_distance(application_sensor_t *sensor, float distance_cm)
+{
+    sensor->distance_samples[sensor->next_sample] = distance_cm;
+    sensor->next_sample =
+        (sensor->next_sample + 1u) % DISTANCE_FILTER_SAMPLES;
+
+    if (sensor->sample_count < DISTANCE_FILTER_SAMPLES) {
+        ++sensor->sample_count;
+    }
+
+    if (sensor->sample_count < DISTANCE_FILTER_SAMPLES) {
+        return false;
+    }
+
+    sensor->filtered_distance_cm = median_of_three(
+        sensor->distance_samples[0],
+        sensor->distance_samples[1],
+        sensor->distance_samples[2]
     );
+    return true;
+}
+
+static void signal_motor(
+    application_sensor_t *sensor,
+    float previous_distance,
+    float new_distance
+)
+{
+    float approach_distance = previous_distance - new_distance;
+
+    if (new_distance > MOTOR_MAX_DISTANCE_CM) {
+        sensor->motor_on = false;
+    } else if (!sensor->motor_on &&
+               approach_distance >= MOTOR_APPROACH_ON_CM) {
+        sensor->motor_on = true;
+    } else if (sensor->motor_on &&
+               approach_distance <= MOTOR_APPROACH_OFF_CM) {
+        sensor->motor_on = false;
+    }
+
+    gpio_put(sensor->motor_pin, sensor->motor_on);
 }
 
 static void queue_audio(audio_message_t message)
@@ -116,6 +184,7 @@ static void handle_ultrasonic_event(const ultrasonic_event_t *event)
 {
     application_sensor_t *sensor;
     float previous_distance;
+    bool previously_ready;
 
     if (event->sensor_index >= NUM_SENSORS) {
         return;
@@ -124,6 +193,10 @@ static void handle_ultrasonic_event(const ultrasonic_event_t *event)
     sensor = &application_sensors[event->sensor_index];
 
     if (event->type == ULTRASONIC_EVENT_TIMEOUT) {
+        sensor->motor_on = false;
+        sensor->filter_ready = false;
+        sensor->sample_count = 0;
+        sensor->next_sample = 0;
         gpio_put(sensor->motor_pin, 0);
         printf(
             "Sensor %u: echo timeout\n",
@@ -132,18 +205,42 @@ static void handle_ultrasonic_event(const ultrasonic_event_t *event)
         return;
     }
 
-    previous_distance = sensor->distance_cm;
-    sensor->distance_cm = event->distance_cm;
+    if (!distance_is_valid(event->distance_cm)) {
+        printf(
+            "Sensor %u: invalid distance %.2f cm\n",
+            (unsigned int)event->sensor_index,
+            event->distance_cm
+        );
+        return;
+    }
+
+    previously_ready = sensor->filter_ready;
+    previous_distance = sensor->filtered_distance_cm;
+    sensor->filter_ready = filter_distance(sensor, event->distance_cm);
 
     printf(
-        "Sensor %u: Distance = %.2f cm\n",
+        "Sensor %u: raw = %.2f cm",
         (unsigned int)event->sensor_index,
-        sensor->distance_cm
+        event->distance_cm
     );
 
-    signal_motor(previous_distance, sensor->distance_cm, event->sensor_index);
+    if (!sensor->filter_ready) {
+        printf(" (filter warming up)\n");
+        return;
+    }
+
+    printf(", filtered = %.2f cm\n", sensor->filtered_distance_cm);
+
+    if (previously_ready) {
+        signal_motor(
+            sensor,
+            previous_distance,
+            sensor->filtered_distance_cm
+        );
+    }
+
     if (event->sensor_index == 0u) {
-        signal_audio(sensor->distance_cm);
+        signal_audio(sensor->filtered_distance_cm);
     }
 }
 
